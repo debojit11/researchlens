@@ -90,7 +90,8 @@ The goal is to answer technical questions using indexed documentation when possi
 
 ## Current Progress
 
-### Phase 1 — Retrieval Foundation ✅
+### Phase 1 — Retrieval Foundation
+![Phase 1](https://img.shields.io/badge/Phase%201-Complete-brightgreen)
 
 - PDF loading
 - Chunking
@@ -102,7 +103,8 @@ The goal is to answer technical questions using indexed documentation when possi
 - Deduplication
 - Local cross-encoder reranking
 
-### Phase 2 — Retrieval Correction ✅
+### Phase 2 — Retrieval Correction
+![Phase 2](https://img.shields.io/badge/Phase%202-Complete-brightgreen)
 
 - Relevance grader
 - Minimum evidence threshold
@@ -110,7 +112,8 @@ The goal is to answer technical questions using indexed documentation when possi
 - Good-evidence branch
 - Poor-evidence branch
 
-### Phase 3 — LangGraph Orchestration 🚧
+### Phase 3 — LangGraph Orchestration
+![Phase 3](https://img.shields.io/badge/Phase%203-In%20Progress-blue)
 
 Next:
 
