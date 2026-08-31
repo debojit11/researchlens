@@ -199,18 +199,15 @@ researchlens/
 `-- README.md
 ```
 
-## Definition of Done
+## Roadmap
 
-ResearchLens v1 is complete when a deployed user can ask both documentation-based and freshness-sensitive technical questions, and the system can:
+ResearchLens is currently under active development.
 
-1. Route the question appropriately.
-2. Retrieve evidence using hybrid search.
-3. Rerank and grade retrieved evidence.
-4. Rewrite and retry weak retrieval.
-5. Fall back to web search when needed.
-6. Generate a cited, grounded answer.
-7. Check faithfulness and usefulness.
-8. Expose traces and evaluation results through LangSmith.
-9. Run through a simple deployed Streamlit interface.
+Next milestones include:
 
-Once those are working reliably, v1 is finished.
+- LangGraph orchestration
+- Web search routing and fallback
+- Grounded answer generation with citations
+- Faithfulness and usefulness checks
+- LangSmith tracing and evaluation
+- Streamlit deployment
