@@ -113,14 +113,39 @@ The goal is to answer technical questions using indexed documentation when possi
 - Poor-evidence branch
 
 ### Phase 3 — LangGraph Orchestration
-![Phase 3](https://img.shields.io/badge/Phase%203-In%20Progress-blue)
+![Phase 3](https://img.shields.io/badge/Phase%203-Complete-brightgreen)
+
+- Shared `ResearchState`
+- Retrieval, reranking, grading, rewriting, and routing nodes
+- Conditional graph routing
+- Bounded rewrite/retrieval retry loop
+- Documentation vs web query analysis
+
+### Phase 4 — Web Search and Fallback
+![Phase 4](https://img.shields.io/badge/Phase%204-Complete-brightgreen)
+
+- TinyFish Search + Fetch integration
+- Direct web route for fresh or external questions
+- Web fallback after weak documentation retrieval
+- Freshness-aware search using `recency_minutes`
+- Live fetches for freshness-sensitive queries using `ttl=0`
+
+### Phase 5 — Answer Generation and Citations
+![Phase 5](https://img.shields.io/badge/Phase%205-Complete-brightgreen)
+
+- Grounded generation from documentation evidence
+- Grounded generation from fetched web evidence
+- Structured documentation citations with page metadata
+- Structured web citations with source titles and URLs
+
+### Phase 6 — Output Quality Checks
+![Phase 6](https://img.shields.io/badge/Phase%206-Next-blue)
 
 Next:
 
-- Define graph state
-- Convert retrieval pipeline into graph nodes
-- Add conditional routing
-- Add retry loop after query rewriting
+- Faithfulness grader
+- Usefulness grader
+- Retry/fallback logic after generation
 
 ## Tech Stack
 
@@ -154,6 +179,7 @@ Create a `.env` file:
 ```env
 GOOGLE_API_KEY=
 HF_TOKEN=
+TINYFISH_API_KEY=
 
 LANGSMITH_TRACING=false
 LANGSMITH_API_KEY=
@@ -186,10 +212,18 @@ researchlens/
 |   |   |-- hybrid.py
 |   |   `-- reranker.py
 |   |
+|   |-- web/
+|   |   |-- __init__.py
+|   |   `-- search.py
+|   |
 |   `-- graph/
 |       |-- __init__.py
 |       |-- graders.py
+|       |-- generator.py
+|       |-- nodes.py
 |       |-- query_rewriter.py
+|       |-- query_router.py
+|       |-- routes.py
 |       `-- workflow.py
 |
 |-- data/
@@ -208,9 +242,7 @@ ResearchLens is currently under active development.
 
 Next milestones include:
 
-- LangGraph orchestration
-- Web search routing and fallback
-- Grounded answer generation with citations
 - Faithfulness and usefulness checks
 - LangSmith tracing and evaluation
 - Streamlit deployment
+- Final documentation and examples

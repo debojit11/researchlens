@@ -163,13 +163,16 @@ Current configuration:
 ```python
 GRADER_MODEL = "gemini-3.5-flash-lite"
 REWRITER_MODEL = "gemini-3.6-flash"
+ROUTER_MODEL = "gemini-3.5-flash-lite"
+GENERATOR_MODEL = "gemini-3.6-flash"
 EMBEDDING_MODEL = "gemini-embedding-2"
 ```
 
 Reasoning:
 
 - Grading is a simple classification-style task, so a lightweight model is sufficient.
-- Query rewriting benefits from a stronger generation model.
+- Query routing is also a constrained classification task and uses the lightweight model.
+- Query rewriting and final answer generation benefit from a stronger generation model.
 - Embeddings use a dedicated embedding model.
 - Reranking is performed locally to avoid API cost and rate limits.
 
@@ -197,7 +200,29 @@ The PDF is still parsed on every run because BM25 currently needs the chunks in 
 
 This can be optimized later, but it is not currently a priority.
 
-## 9. Current Implementation Status
+## 9. Web Search Strategy
+
+TinyFish Search + Fetch is used when a question requires fresh or external information, or when documentation retrieval remains weak after bounded rewriting attempts.
+
+Current behavior:
+
+```text
+normal web query
+-> TinyFish Search
+-> Fetch
+-> Generate
+
+freshness-sensitive query
+-> TinyFish Search with recency_minutes
+-> Fetch with ttl=0
+-> Generate
+```
+
+Freshness-sensitive queries include terms such as `today`, `this week`, `latest`, `recent`, and `current`.
+
+Web evidence is kept separate from indexed documentation evidence. The final answer-generation node can therefore construct source-specific citation metadata for either branch.
+
+## 10. Current Implementation Status
 
 ### Phase 1 — Retrieval Foundation
 
@@ -230,35 +255,42 @@ Implemented:
 
 ### Phase 3 — LangGraph Orchestration
 
-Status: NEXT
+Status: COMPLETE
 
-Planned work:
+Implemented:
 
-1. Define `ResearchState`.
-2. Convert retrieval operations into graph nodes.
-3. Add conditional edges.
-4. Add query rewrite loop.
-5. Add retry limits.
-6. Later attach query routing and web search.
+- `ResearchState` with progressively populated graph fields
+- graph nodes for retrieval, reranking, grading, rewriting, query analysis, web search, and generation
+- documentation vs web conditional routing
+- bounded query-rewrite and retrieval retry loop
+- fallback to web search after repeated weak documentation retrieval
 
-## 10. Planned Remaining Phases
+### Phase 4 — Query Routing and Web Search
 
-### Phase 3 — LangGraph core
-- State
-- nodes
-- edges
-- conditional routing
-- retry loop
+Status: COMPLETE
 
-### Phase 4 — Query routing and web search
-- classify documentation vs fresh/external query
-- direct web branch
+Implemented:
+
+- LLM-based documentation vs web query routing
+- TinyFish Search + Fetch integration
+- direct web route for fresh or external questions
 - web fallback after failed documentation retrieval
+- freshness-sensitive search with `recency_minutes`
+- live fetches for fresh queries with `ttl=0`
 
-### Phase 5 — Answer generation
-- context assembly
-- grounded answer generation
-- citations
+### Phase 5 — Answer Generation
+
+Status: COMPLETE
+
+Implemented:
+
+- grounded answer generation from documentation evidence
+- grounded answer generation from fetched web evidence
+- structured documentation citations containing source and page metadata
+- structured web citations containing source title and URL
+- explicit refusal to invent an answer when supplied evidence is insufficient
+
+## 11. Planned Remaining Phases
 
 ### Phase 6 — Output quality checks
 - faithfulness grader
@@ -280,7 +312,7 @@ Planned work:
 - example queries
 - cleanup
 
-## 11. v1 Boundary
+## 12. v1 Boundary
 
 The following are intentionally excluded from v1:
 
@@ -299,7 +331,7 @@ The following are intentionally excluded from v1:
 
 Adding another technical documentation ecosystem later should be treated as a data/configuration extension, not a new architectural milestone.
 
-## 12. Definition of Done
+## 13. Definition of Done
 
 ResearchLens v1 is finished when a deployed user can:
 

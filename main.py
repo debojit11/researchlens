@@ -8,6 +8,10 @@ from app.retrieval.reranker import Reranker
 from app.graph.graders import RelevanceGrader
 from app.config import MIN_RELEVANT_DOCS
 from app.graph.query_rewriter import QueryRewriter
+from app.graph.query_router import QueryRouter
+from app.web.search import TinyFishSearch
+from app.graph.generator import AnswerGenerator
+from app.graph.workflow import build_research_graph
 
 
 load_dotenv()
@@ -53,72 +57,70 @@ def main():
     chunks = load_pdf("data/sample.pdf")
     print(f"Total chunks: {len(chunks)}")
 
-
     if vector_store_exists():
         print("\nLoading existing vector store...")
-        vector_store= load_vector_store()
+        vector_store = load_vector_store()
     else:
         print("\nCreating vector store...")
-        vector_store= create_vector_store(chunks)
+        vector_store = create_vector_store(chunks)
 
     print("Creating BM25 index...")
-    bm25_retriever= BM25Retriever(chunks)
+    bm25_retriever = BM25Retriever(chunks)
 
-    print("\nLoading reranker...")
-    reranker=Reranker()
+    print("Loading reranker...")
+    reranker = Reranker()
 
-    query= "How does AWS SDK credential resolution work?"
-
-    vector_results= vector_search(vector_store, query, k=5)
-
-    bm25_results = bm25_retriever.search(query, k=5)
-
-    hybrid_results= merge_results(vector_results, bm25_results)
-
-    reranked_results = reranker.rerank(query, hybrid_results, top_k=5)
-
-    print(f"\nQuery: {query}")
-
-    print_results("VECTOR SEARCH RESULTS", vector_results)
-
-    print_results("BM25 SEARCH RESULTS", bm25_results)
-
-    print_results("HYBRID CANDIDATES", hybrid_results)
-
-    print(f"\nTotal hybrid candidates: {len(hybrid_results)}")
-
-    print_reranked_results(reranked_results)
-
-    print("\nGrading reranked documents...")
     relevance_grader = RelevanceGrader()
+    query_rewriter = QueryRewriter()
+    query_router = QueryRouter()
+    web_search = TinyFishSearch()
+    answer_generator = AnswerGenerator()
 
-    graded_results=[]
+    graph = build_research_graph(
+        vector_store=vector_store,
+        bm25_retriever=bm25_retriever,
+        reranker=reranker,
+        relevance_grader=relevance_grader,
+        query_rewriter=query_rewriter,
+        query_router=query_router,
+        web_search=web_search,
+        answer_generator=answer_generator,
+    )
 
-    for doc, score in reranked_results:
-        is_relevant= relevance_grader.grade(query=query,
-                                            document=doc.page_content)
+    query = "What changed in AWS SDK authentication this week?"
 
-        graded_results.append((doc, score, is_relevant))
+    result = graph.invoke(
+        {
+            "query": query,
+            "rewrite_count": 0,
+        }
+    )
 
-    print_graded_results(graded_results)
+    web_results = result.get("web_results", [])
 
-    relevant_docs = [doc for doc, _, relevant in graded_results
-    if relevant]
+    print("\nFINAL GRAPH STATE")
+    print(f"Query: {result['query']}")
+    print(f"Route: {result.get('route')}")
+    print(f"Rewrite count: {result.get('rewrite_count', 0)}")
+    print(f"Relevant docs: {len(result.get('relevant_docs', []))}")
+    print(f"Rewritten query: {result.get('rewritten_query', 'None')}")
+    print(f"Web results: {len(web_results)}")
 
-    print(f"\nRelevant documents: {len(relevant_docs)}")
+    for i, web_result in enumerate(web_results, start=1):
+        print(f"\n--- Web Result {i} ---")
+        print(f"Title: {web_result.get('title')}")
+        print(f"URL: {web_result.get('url')}")
+        print(web_result.get("text", "")[:500])
 
-    if len(relevant_docs) < MIN_RELEVANT_DOCS:
-        print("\nRetrieval quality is poor. Rewriting query...")
+    print("\nANSWER")
+    print("=" * 50)
+    print(result.get("answer"))
 
-        rewriter = QueryRewriter()
+    print("\nCITATIONS")
+    print("=" * 50)
 
-        rewritten_query = rewriter.rewrite(query)
-
-        print(f"Original query:  {query}")
-        print(f"Rewritten query: {rewritten_query}")
-
-    else:
-        print("\nEnough relevant evidence found.")
+    for citation in result.get("citations", []):
+        print(citation)
 
 
 if __name__ == "__main__":

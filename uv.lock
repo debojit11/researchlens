@@ -2992,6 +2992,7 @@ dependencies = [
     { name = "pypdf" },
     { name = "python-dotenv" },
     { name = "rank-bm25" },
+    { name = "requests" },
     { name = "sentence-transformers" },
 ]
 
@@ -3009,6 +3010,7 @@ requires-dist = [
     { name = "pypdf", specifier = ">=6.16.2" },
     { name = "python-dotenv", specifier = ">=1.2.3" },
     { name = "rank-bm25", specifier = ">=0.2.2" },
+    { name = "requests", specifier = ">=2.34.2" },
     { name = "sentence-transformers", specifier = ">=6.0.1" },
 ]
 
