@@ -1,5 +1,6 @@
 import os
 import requests
+import time
 
 
 SEARCH_URL = "https://api.search.tinyfish.ai"
@@ -37,18 +38,24 @@ class TinyFishSearch:
     def search(self, query: str, max_results: int = 5,) -> list[dict]:
 
         params = {"query": query,
-            "purpose": "Find up-to-date technical information relevant to the user's question.",
+            "purpose": (
+                "Find up-to-date technical information that directly matches the exact "
+                "technology, SDK, product, or library named in the user's question. "
+                "Do not substitute related third-party SDKs or adjacent technologies."
+            ),
         }
 
         if needs_fresh_search(query):
             params["recency_minutes"] = 10080  # 7 days
 
-        response = requests.get(SEARCH_URL, headers=self.headers,
+        response = self._request_with_retry(
+            "GET",
+            SEARCH_URL,
+            headers=self.headers,
             params=params,
             timeout=30,
         )
 
-        response.raise_for_status()
         data = response.json()
 
         return data.get("results", [])[:max_results]
@@ -62,7 +69,9 @@ class TinyFishSearch:
         if live:
             payload["ttl"] = 0
 
-        response = requests.post(FETCH_URL,
+        response = self._request_with_retry(
+            "POST",
+            FETCH_URL,
             headers={
                 **self.headers,
                 "Content-Type": "application/json",
@@ -71,7 +80,6 @@ class TinyFishSearch:
             timeout=60,
         )
 
-        response.raise_for_status()
         data = response.json()
 
         return data.get("results", [])
@@ -92,3 +100,22 @@ class TinyFishSearch:
         fetched_results = self.fetch(urls, live=fresh,)
 
         return fetched_results
+
+
+
+
+    def _request_with_retry( self, method: str, url: str, *, max_attempts: int = 3, **kwargs,):
+        for attempt in range(1, max_attempts + 1):
+            try:
+                response = requests.request(method, url, **kwargs,)
+
+                response.raise_for_status()
+                return response
+
+            except requests.RequestException:
+                if attempt == max_attempts:
+                    raise
+
+                wait_seconds = 2 ** (attempt - 1)
+
+                time.sleep(wait_seconds)

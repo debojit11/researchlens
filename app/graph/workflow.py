@@ -9,16 +9,26 @@ from app.graph.nodes import (
     rewrite_query_node,
     query_analysis_node,
     web_search_node,
-    generate_answer_node,)
+    generate_answer_node,
+    faithfulness_check_node,
+    usefulness_check_node,
+    quality_failure_node,
+    insufficient_evidence_node,)
 
-from app.graph.routes import route_after_grading, route_query
+from app.graph.routes import (
+    route_after_grading,
+    route_query,
+    route_after_faithfulness,
+    route_after_usefulness,
+    route_after_web_search)
 
 
 
 
 def build_research_graph(*, vector_store, bm25_retriever, reranker,
                          relevance_grader, query_rewriter, query_router,
-                         web_search, answer_generator):
+                         web_search, answer_generator, faithfulness_grader,
+                         usefulness_grader, web_evidence_grader,):
 
     graph = StateGraph(ResearchState)
 
@@ -36,10 +46,17 @@ def build_research_graph(*, vector_store, bm25_retriever, reranker,
 
     query_node = partial(query_analysis_node, query_router=query_router)
 
-    web_node = partial(web_search_node, web_search=web_search)
+    web_node = partial(web_search_node, web_search=web_search,
+                         web_evidence_grader=web_evidence_grader)
 
     generate_node = partial(generate_answer_node,
                             answer_generator=answer_generator)
+
+    faithfulness_node = partial(faithfulness_check_node,
+                                faithfulness_grader=faithfulness_grader)
+
+    usefulness_node = partial(usefulness_check_node,
+                              usefulness_grader=usefulness_grader)
 
 
 
@@ -51,6 +68,10 @@ def build_research_graph(*, vector_store, bm25_retriever, reranker,
     graph.add_node("query_analysis", query_node)
     graph.add_node("web_search", web_node)
     graph.add_node("generate", generate_node)
+    graph.add_node("faithfulness", faithfulness_node)
+    graph.add_node("usefulness", usefulness_node)
+    graph.add_node("quality_failure", quality_failure_node)
+    graph.add_node("insufficient_evidence", insufficient_evidence_node)
 
 
 
@@ -93,14 +114,48 @@ def build_research_graph(*, vector_store, bm25_retriever, reranker,
         "retrieve",
     )
 
-    graph.add_edge(
+    graph.add_conditional_edges(
         "web_search",
-        "generate",
+        route_after_web_search,
+        {
+            "generate": "generate",
+            "insufficient": "insufficient_evidence",
+        },
+    )
+
+    graph.add_edge(
+        "insufficient_evidence",
+        END,
     )
 
     graph.add_edge(
         "generate",
-        END,
+        "faithfulness",
+    )
+
+    graph.add_conditional_edges(
+        "faithfulness",
+        route_after_faithfulness,
+        {
+            "usefulness": "usefulness",
+            "retry": "generate",
+            "failed": "quality_failure",
+        }
+    )
+
+    graph.add_conditional_edges(
+        "usefulness",
+        route_after_usefulness,
+        {
+            "done": END,
+            "retry": "generate",
+            "failed": "quality_failure",
+        }
+    )
+
+    graph.add_edge(
+        "quality_failure",
+        END
     )
 
 

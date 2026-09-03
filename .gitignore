@@ -16,3 +16,13 @@ data/*
 
 # Secrets
 .env
+
+# files
+pdf_structure.txt
+chunking_prototype.txt
+chunking_prototype_v2.txt
+docling_output.txt
+loader_v2_output.txt
+
+# folders
+scripts/

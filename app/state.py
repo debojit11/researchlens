@@ -14,7 +14,13 @@ class ResearchState(TypedDict, total=False):
 
     web_results: list[dict]
 
+    rewrite_count: int
+
     answer: str
     citations: list[dict]
 
-    rewrite_count: int
+    faithful: bool
+    useful: bool
+    generation_attempts: int
+
+    
