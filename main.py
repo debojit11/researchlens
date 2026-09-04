@@ -70,7 +70,7 @@ def main():
         web_evidence_grader=web_evidence_grader,
     )
 
-    query = ("How does AWS SDK credential resolution work?")
+    query = ("What is the latest stable version of the AWS SDK for Java?")
 
     result = graph.invoke(
         {

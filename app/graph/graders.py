@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from langchain_google_genai import ChatGoogleGenerativeAI
 from app.config import GRADER_MODEL
+from datetime import datetime, timezone
 
 
 class RelevanceGrade(BaseModel):
@@ -141,10 +142,24 @@ Answer:
 
 
 class WebEvidenceGrade(BaseModel):
-    relevant: bool = Field(
+    scope_match: bool = Field(
         description=(
-            "Whether the web result directly provides evidence for the user's "
-            "exact question and stays within the requested technology or entity scope."
+            "Whether the result concerns the exact SDK, library, product, "
+            "technology, or organization requested by the user."
+        )
+    )
+
+    content_match: bool = Field(
+        description=(
+            "Whether the result actually contains evidence that answers "
+            "the substance of the user's question."
+        )
+    )
+
+    temporal_match: bool = Field(
+        description=(
+            "Whether the result satisfies the requested freshness or time window. "
+            "For non-time-sensitive questions, this should be true."
         )
     )
 
@@ -157,36 +172,100 @@ class WebEvidenceGrader:
 
 
     def grade(self, *, query: str, title: str, url: str, content: str,) -> bool:
+
+        current_date = datetime.now(timezone.utc).date().isoformat()
+
         prompt = f"""
-You are grading web evidence for a technical research assistant.
+    You are grading web evidence for a technical research assistant.
 
-Determine whether this web result directly provides evidence relevant
-to the user's exact question.
+    Evaluate the result against THREE independent requirements:
 
-Be strict about entity and technology scope.
+    1. SCOPE MATCH
+    2. CONTENT MATCH
+    3. TEMPORAL MATCH
 
-Rules:
-- The result must concern the exact SDK, library, product, technology,
-  or organization requested by the user.
-- Do not treat a related third-party SDK or adjacent technology as the
-  requested technology.
-- Keyword overlap alone is not enough.
-- For questions asking about recent changes, the result must actually
-  contain information about the requested change.
-- General pages that merely mention the technology are not sufficient.
+    Be strict. A result is usable only when all required conditions are satisfied.
 
-User question:
-{query}
+    Current date:
+    {current_date}
 
-Result title:
-{title}
+    SCOPE MATCH rules:
+    - The result must concern the exact SDK, library, product, technology,
+    organization, or official ecosystem requested by the user.
+    - A third-party package that integrates with or targets the requested
+    technology is NOT automatically the requested technology.
+    - For example, a third-party package for Amazon Bedrock is not itself
+    an AWS SDK merely because it contains "AWS", "Bedrock", or SDK terminology.
+    - Do not substitute adjacent technologies, wrappers, integrations,
+    unofficial packages, or similarly named projects.
+    - Keyword overlap alone is not enough.
 
-Result URL:
-{url}
+    CONTENT MATCH rules:
+    - The result must contain information that materially answers the
+    specific question.
+    - If the user asks what changed, the result must describe an actual
+    change, release, modification, fix, behavior update, or documented
+    difference.
+    - A general documentation page that only explains the technology is
+    not evidence of a change.
+    - A page merely mentioning the requested subject is insufficient.
+    - If the user asks for the latest or current version of an SDK or library,
+    the result must provide evidence that identifies the current/latest
+    release for the relevant active major version or overall product.
+    - A documentation page that merely contains a version number is not enough.
+    - Do not treat an old or end-of-support major version as the current/latest
+    SDK merely because the page title or URL contains "latest".
 
-Result content:
-{content[:3000]}
-"""
+   TEMPORAL MATCH rules:
+    - If the question is not time-sensitive, temporal_match should be true.
+    - If the question contains terms such as "today", "this week", "latest",
+    "recent", "recently", "newest", or "current", the result should provide
+    usable temporal evidence such as a publication date, release date,
+    changelog date, commit date, or equivalent timestamp.
+    - For "this week", strongly prefer evidence from roughly the most recent
+    7-day period.
+    - Slightly older evidence may still count as temporal_match if it is
+    clearly recent, directly relevant to the requested change, and appears
+    to represent a meaningful or latest available update.
+    - Do not accept substantially old evidence as satisfying a freshness-sensitive
+    request merely because it is relevant.
+    - For "latest" or "current version" questions, temporal_match should be true
+    only when the result provides evidence that the version is current/latest,
+    or provides a recent release/version listing that allows that conclusion.
+    - A URL or page title containing the word "latest" is not sufficient evidence
+    by itself.
+    - If evidence is slightly older than the requested window, temporal_match
+    may still be true, but the final answer should state the exact date rather
+    than imply that it happened strictly within the requested week.
+    - If no usable date or temporal evidence is present, temporal_match
+    should be false for a freshness-sensitive question.
+    - Do not infer freshness merely because a search engine returned the page.
+
+    User question:
+    {query}
+
+    Result title:
+    {title}
+
+    Result URL:
+    {url}
+
+    Result content:
+    {content[:6000]}
+    """
 
         result = self.grader.invoke(prompt)
-        return result.relevant
+
+        # print("\nWEB EVIDENCE GRADE")
+        # print("=" * 60)
+        # print("Title:", title)
+        # print("URL:", url)
+        # print("Scope match:", result.scope_match)
+        # print("Content match:", result.content_match)
+        # print("Temporal match:", result.temporal_match)
+
+        return (
+            result.scope_match
+            and result.content_match
+            and result.temporal_match
+        )

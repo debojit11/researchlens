@@ -157,7 +157,7 @@ The reranker choice was validated experimentally. Larger and alternative reranke
 - Explicit terminal response if an acceptable grounded answer cannot be produced
 
 ### Phase 7 — LangSmith and Evaluation
-![Phase 7](https://img.shields.io/badge/Phase%207-In%20Progress-yellow)
+![Phase 7](https://img.shields.io/badge/Phase%207-Complete-brightgreen)
 
 Completed:
 
@@ -169,22 +169,41 @@ Completed:
 - Faithfulness evaluator
 - Usefulness evaluator
 - Multiple reranker comparison runs
-- Clean 12/12 quality benchmark with `BAAI/bge-reranker-base` before the ingestion-v2 experiment
+- Structured-ingestion v2 evaluation
+- Final clean 12/12 benchmark after web-retrieval refinements
+- Controlled corrective-retrieval branch validation with `pytest`
 
-Current validation work:
+Final evaluation result:
 
-- The retrieval corpus has been rebuilt using the new structured ingestion pipeline and task-aware Gemini Embedding 2 formatting.
-- A fresh 12-case evaluation is being rerun against this ingestion-v2 baseline.
-- The latest run was interrupted by temporary Gemini Embedding 2 `429 RESOURCE_EXHAUSTED` errors during query embedding, so that comparison still needs a clean rerun.
+```text
+route accuracy:        1.00
+answer behavior:       1.00
+faithfulness:          1.00 on generated answers
+usefulness:            1.00 on generated answers
+successful runs:       12/12
+```
+
+The corrective branch was also validated independently by temporarily patching the evidence threshold inside a standalone test. The graph executed two rewrite cycles and terminated normally, proving the bounded rewrite/retrieve path works without changing production configuration.
 
 ### Phase 8 — UI and Deployment
-![Phase 8](https://img.shields.io/badge/Phase%208-Not%20Started-lightgrey)
+![Phase 8](https://img.shields.io/badge/Phase%208-In%20Progress-yellow)
+
+Current deployment preparation:
+
+- measured local process memory across startup and one full query
+- idle graph footprint: about 1.0 GB RSS
+- observed post-query RSS: about 1.48 GB
+- target deployment baseline: 2 GiB RAM with concurrency 1
+- Google Cloud Run selected as the leading deployment target
+- startup optimization planned before UI work so the PDF is not reparsed on every cold start
 
 Remaining:
 
-- Streamlit frontend
-- Free deployment
-- Final cleanup and examples
+- persist/load structured chunks for faster startup
+- containerize the application
+- deploy the backend on Cloud Run
+- add the user-facing UI
+- final cleanup and examples
 
 ## Structured Ingestion v2
 
@@ -362,7 +381,12 @@ researchlens/
 |   |-- chunking_prototype.py
 |   |-- chunking_prototype_v2.py
 |   |-- test_loader_v2.py
-|   `-- test_embeddings_v2.py
+|   |-- test_embeddings_v2.py
+|   `-- measure_memory.py
+|
+|-- tests/
+|   |-- conftest.py
+|   `-- test_corrective_retrieval.py
 |
 |-- .env
 |-- .gitignore
@@ -373,14 +397,15 @@ researchlens/
 
 ## Roadmap
 
-The core adaptive-RAG system is implemented.
+The adaptive-RAG, corrective-retrieval, web-evidence, answer-quality, and evaluation layers are now frozen for v1.
 
-Remaining v1 milestones are intentionally small:
+The remaining work is deployment-focused:
 
-- complete a clean ingestion-v2 LangSmith evaluation run,
-- perform the final controlled corrective/rewrite branch validation if still needed,
-- build the Streamlit UI,
-- deploy on a free tier,
+- persist the 746 structured chunks so production startup does not reparse the source PDF,
+- package the application for container deployment,
+- deploy the backend to Google Cloud Run,
+- start with 2 GiB RAM, concurrency 1, and one warm minimum instance while trial credits are available,
+- build the user-facing interface,
 - finalize examples and documentation.
 
 The project remains intentionally bounded: new RAG techniques or additional documentation ecosystems are not required for v1.

@@ -575,25 +575,68 @@ This means the system is currently healthy, but the broad-vs-specialized orderin
 
 The reranker will not be changed again unless the full evaluation shows a meaningful regression.
 
-## 18. Current Evaluation Issue
+## 18. Final Web Retrieval Refinements and Evaluation
 
-A fresh 12-case LangSmith run is in progress for the ingestion-v2 baseline.
+The ingestion-v2 stack was evaluated against the same 12-case LangSmith dataset used for earlier baselines.
 
-The latest attempt reached multiple cases successfully but then encountered temporary:
+During validation, two classes of web-search weakness were exposed:
+
+1. scope drift, where a related third-party SDK could look relevant to an AWS SDK query,
+2. freshness/version ambiguity, where a page was topically relevant but did not establish that a change was recent or that a version was actually current/latest.
+
+### Web evidence grading
+
+The web evidence grader was expanded from a single `relevant` boolean into three independent judgments:
 
 ```text
-429 RESOURCE_EXHAUSTED
+scope_match
+content_match
+temporal_match
 ```
 
-errors from Gemini Embedding 2 during query embedding.
+The application accepts web evidence only when all three are true.
 
-The exception occurs inside vector retrieval when Chroma requests `embed_query`, not in LangGraph orchestration or Chroma persistence.
+The grader now distinguishes exact product/entity scope, actual change evidence, recent/current evidence, and active/latest SDK versions from old major-version documentation.
 
-Current plan:
+Freshness rules are intentionally practical rather than excessively rigid. Evidence from roughly the requested recent window is preferred, while slightly older but clearly recent and directly relevant evidence can still be used when the exact date is shown in the answer.
 
-- rerun after the temporary capacity/quota condition clears,
-- if the problem repeats, add a small retry/backoff around query embedding,
-- do not redesign the architecture because of a transient API-capacity failure.
+### Search expansion
+
+TinyFish search was made intent-aware.
+
+Fresh change queries add a bounded expansion such as:
+
+```text
+<query> changelog release notes
+```
+
+Latest-version queries add a different bounded expansion:
+
+```text
+<query> releases versions Maven GitHub
+```
+
+Latest-version queries do not receive the 7-day search restriction, because the current stable release may be older than seven days. They still use live fetches and the strict evidence grader.
+
+### Generator freshness behavior
+
+For freshness-sensitive questions, the generator preserves dates from the evidence and avoids claiming that an older item happened strictly inside the requested window.
+
+### Final evaluation
+
+After these refinements, the final 12-case LangSmith run completed successfully:
+
+```text
+route accuracy:        1.00
+answer behavior:       1.00
+faithfulness:          1.00 on generated answers
+usefulness:            1.00 on generated answers
+successful runs:       12/12
+```
+
+Two explicit insufficient-evidence cases correctly skipped faithfulness/usefulness scoring because no answer generation occurred.
+
+Temporary Gemini Embedding 2 `429 RESOURCE_EXHAUSTED` errors were observed during some earlier evaluation attempts. These were external query-embedding capacity/rate failures rather than graph or retrieval-logic failures. The clean rerun completed without changing the architecture.
 
 ## 19. Current Implementation Status
 
@@ -678,7 +721,7 @@ Implemented:
 
 ### Phase 7 — LangSmith
 
-Status: IN PROGRESS / ALMOST COMPLETE
+Status: COMPLETE
 
 Implemented:
 
@@ -689,25 +732,100 @@ Implemented:
 - faithfulness evaluator
 - usefulness evaluator
 - reranker comparison experiments
-- established clean BGE-base benchmark
+- structured-ingestion v2 benchmark
+- final 12/12 evaluation
+- controlled corrective/rewrite-branch test
 
-Remaining:
+The controlled corrective-retrieval test lives under `tests/` and patches only the module-level evidence threshold for the duration of the test. Production `MIN_RELEVANT_DOCS = 2` remains unchanged.
 
-- complete a clean post-ingestion-v2 12-case run
-- optionally perform one controlled corrective/rewrite-branch validation before final freeze
+The test produced:
+
+```text
+route: documentation
+rewrite_count: 2
+```
+
+and completed successfully, proving the bounded rewrite/retrieve loop executes as designed.
 
 ### Phase 8 — UI and Deployment
 
-Status: NOT STARTED
+Status: IN PROGRESS
+
+Current preparation:
+
+- local memory profiling added
+- measured approximately 1.0 GB RSS after full graph construction
+- measured approximately 1.48 GB RSS after one complete documentation query
+- Cloud Run selected as the leading deployment target
+- initial target sizing: 2 GiB RAM, concurrency 1
+- startup optimization planned before user-facing UI work
 
 Remaining:
 
-- Streamlit frontend
-- free deployment
+- persist structured chunks for production startup
+- containerize the application
+- deploy backend to Cloud Run
+- build the user-facing interface
 - final cleanup
 - final examples
 
-## 20. v1 Boundary
+## 20. Deployment Performance Planning
+
+Local startup profiling was performed before beginning UI/deployment work because the development entry point still reparses the source PDF and reconstructs in-memory resources on every process start.
+
+Measured Windows RSS:
+
+```text
+Python startup:             ~574 MB
+after loader_v2:            ~661 MB
+after Chroma:               ~667 MB
+after BM25:                 ~667 MB
+after BGE reranker:         ~995 MB
+after full graph build:     ~1.00 GB
+after one full query:       ~1.48 GB
+```
+
+The measurements show that:
+
+- Chroma and BM25 add relatively little memory compared with the Python/model stack,
+- loading `BAAI/bge-reranker-base` is a major startup cost,
+- a full query introduces additional temporary memory pressure,
+- 2 GiB is a reasonable initial Cloud Run target but should be used with concurrency 1 and monitored,
+- 4 GiB remains the fallback if Linux/container measurements approach the 2 GiB limit.
+
+The next startup optimization is to move structured PDF parsing out of the runtime path:
+
+```text
+offline/build step
+PDF
+-> loader_v2
+-> 746 structured chunks
+-> persisted chunk artifact
+-> persistent Chroma
+
+runtime startup
+persisted chunks
+-> BM25
+persistent Chroma
+-> vector retrieval
+load reranker
+-> build graph once
+```
+
+This removes repeated parsing of the 242-page source document from cold starts.
+
+Google Cloud Run is currently the preferred deployment target. The initial deployment plan is:
+
+```text
+memory:       2 GiB
+concurrency:  1
+min instance: 1
+```
+
+Actual Cloud Run memory metrics will be used to validate or increase that allocation.
+
+## 21. v1 Boundary
+
 
 The following remain intentionally excluded:
 
@@ -726,7 +844,7 @@ The following remain intentionally excluded:
 
 Adding another technical documentation ecosystem later should be treated as a data/configuration extension, not a new architectural milestone.
 
-## 21. Definition of Done
+## 22. Definition of Done
 
 ResearchLens v1 is finished when a deployed user can:
 
@@ -741,6 +859,6 @@ ResearchLens v1 is finished when a deployed user can:
 9. Receive a grounded answer with citations.
 10. Have the answer checked for faithfulness and usefulness.
 11. Inspect traces/evaluations through LangSmith.
-12. Use the system through the deployed Streamlit UI.
+12. Use the system through the deployed user-facing application.
 
 After this point, the project should be considered complete rather than continuously expanded.

@@ -37,16 +37,35 @@ class TinyFishSearch:
 
     def search(self, query: str, max_results: int = 5,) -> list[dict]:
 
-        params = {"query": query,
-            "purpose": (
-                "Find up-to-date technical information that directly matches the exact "
-                "technology, SDK, product, or library named in the user's question. "
-                "Do not substitute related third-party SDKs or adjacent technologies."
-            ),
-        }
+        if self.is_version_query(query):
+            purpose = (
+                "Find authoritative evidence for the current or latest stable version "
+                "of the exact SDK, library, product, or technology named in the question. "
+                "Prefer official release pages, official changelogs, package registries, "
+                "or the project's official GitHub releases. "
+                "Do not substitute another SDK, major version, or adjacent package."
+            )
 
-        if needs_fresh_search(query):
-            params["recency_minutes"] = 10080  # 7 days
+        elif needs_fresh_search(query):
+            purpose = (
+                "Find recent, dated technical evidence that directly matches the exact "
+                "technology, SDK, product, or library named in the user's question. "
+                "Prefer official changelogs, release notes, GitHub release histories, "
+                "official announcements, or other sources that contain explicit dates. "
+                "Do not substitute related third-party SDKs or adjacent technologies."
+            )
+
+        else:
+            purpose = (
+                "Find technical information that directly matches the exact technology, "
+                "SDK, product, or library named in the user's question. "
+                "Do not substitute related third-party SDKs or adjacent technologies."
+            )
+
+        params = {"query": query, "purpose": purpose,}
+
+        if needs_fresh_search(query) and not self.is_version_query(query):
+            params["recency_minutes"] = 10080
 
         response = self._request_with_retry(
             "GET",
@@ -57,7 +76,6 @@ class TinyFishSearch:
         )
 
         data = response.json()
-
         return data.get("results", [])[:max_results]
 
 
@@ -86,20 +104,56 @@ class TinyFishSearch:
 
 
 
-    def search_and_fetch(self, query: str, max_results: int = 3,) -> list[dict]:
+    def is_version_query(self, query: str) -> bool:
+        query_lower = query.lower()
 
-        search_results = self.search(query=query, max_results=max_results,)
+        return any(
+            term in query_lower
+            for term in (
+                "latest version",
+                "latest stable version",
+                "current version",
+                "newest version",
+            )
+        )
 
-        urls = [result["url"] for result in search_results
-            if result.get("url")]
+
+    def search_and_fetch(self, query: str, max_results: int = 6,) -> list[dict]:
+
+        queries = [query]
+
+        if self.is_version_query(query):
+            queries.append(f"{query} releases versions Maven GitHub")
+        elif needs_fresh_search(query):
+            queries.append(f"{query} changelog release notes")
+
+        search_results = []
+
+        for search_query in queries:
+            results = self.search(
+                query=search_query,
+                max_results=3,
+            )
+            search_results.extend(results)
+
+        urls = []
+        seen_urls = set()
+
+        for result in search_results:
+            url = result.get("url")
+
+            if url and url not in seen_urls:
+                seen_urls.add(url)
+                urls.append(url)
+
+        urls = urls[:max_results]
 
         if not urls:
             return []
 
         fresh = needs_fresh_search(query)
-        fetched_results = self.fetch(urls, live=fresh,)
 
-        return fetched_results
+        return self.fetch(urls, live=fresh,)
 
 
 
