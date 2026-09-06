@@ -16,7 +16,7 @@ class RelevanceGrader:
         self.grader = llm.with_structured_output(RelevanceGrade)
 
 
-    def grade(self, query: str, document: str) -> bool:
+    async def grade(self, query: str, document: str) -> bool:
         prompt = f"""
 You are evaluating whether a retrieved technical documentation
 chunk is useful for answering a user's question.
@@ -40,7 +40,7 @@ Rules:
   words or terminology.
 """
 
-        result = self.grader.invoke(prompt)
+        result = await self.grader.ainvoke(prompt)
         return result.relevant
 
 
@@ -64,7 +64,7 @@ class FaithfulnessGrader:
 
 
 
-    def grade(self, query: str, answer: str, evidence: str) -> bool:
+    async def grade(self, query: str, answer: str, evidence: str) -> bool:
         prompt= f"""
 You are evaluating whether an answer is faithful to the supplied evidence.
 
@@ -87,7 +87,7 @@ Answer:
 {answer}
 """
 
-        result = self.grader.invoke(prompt)
+        result = await self.grader.ainvoke(prompt)
         return result.faithful
 
 
@@ -113,7 +113,7 @@ class UsefulnessGrader:
         self.grader = llm.with_structured_output(UsefulnessGrade)
 
 
-    def grade(self, query: str, answer: str) -> bool:
+    async def grade(self, query: str, answer: str) -> bool:
 
         prompt= f"""
 You are evaluating whether an answer is useful to the user.
@@ -134,7 +134,7 @@ Answer:
 {answer}
 """
 
-        result = self.grader.invoke(prompt)
+        result = await self.grader.ainvoke(prompt)
         return result.useful
 
 
@@ -171,7 +171,7 @@ class WebEvidenceGrader:
 
 
 
-    def grade(self, *, query: str, title: str, url: str, content: str,) -> bool:
+    async def grade(self, *, query: str, title: str, url: str, content: str,) -> bool:
 
         current_date = datetime.now(timezone.utc).date().isoformat()
 
@@ -254,7 +254,7 @@ class WebEvidenceGrader:
     {content[:6000]}
     """
 
-        result = self.grader.invoke(prompt)
+        result = await self.grader.ainvoke(prompt)
 
         # print("\nWEB EVIDENCE GRADE")
         # print("=" * 60)

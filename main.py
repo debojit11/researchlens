@@ -1,5 +1,6 @@
 from dotenv import load_dotenv
 from app.ingestion.loader_v2 import load_pdf_v2
+from app.ingestion.chunk_store import load_chunks
 from app.retrieval.vector import (
     create_vector_store,
     load_vector_store,
@@ -24,8 +25,8 @@ load_dotenv()
 
 
 def main():
-    print("Loading and chunking document...")
-    chunks = load_pdf_v2("data/sample.pdf")
+    print("Loading persisted chunks...")
+    chunks = load_chunks("data/chunks.jsonl")
 
     print(f"Total chunks: {len(chunks)}")
 

@@ -54,14 +54,14 @@ def rerank_node(state: ResearchState, *, reranker) -> dict:
 
 
 
-def grade_documents_node(state: ResearchState, *, relevance_grader) ->dict:
+async def grade_documents_node(state: ResearchState, *, relevance_grader) ->dict:
 
     query = state.get("rewritten_query") or state["query"]
     reranked_docs = state["reranked_docs"]
 
     relevant_docs =[]
     for doc in reranked_docs:
-        is_relevant = relevance_grader.grade(query=query, 
+        is_relevant = await relevance_grader.grade(query=query, 
                                              document= doc.page_content)
 
         if is_relevant:
@@ -72,11 +72,11 @@ def grade_documents_node(state: ResearchState, *, relevance_grader) ->dict:
 
 
 
-def rewrite_query_node(state: ResearchState, *, query_rewriter) -> dict:
+async def rewrite_query_node(state: ResearchState, *, query_rewriter) -> dict:
 
     current_query = state.get("rewritten_query") or state["query"]
 
-    rewritten_query = query_rewriter.rewrite(current_query)
+    rewritten_query = await query_rewriter.rewrite(current_query)
 
     rewrite_count = state.get("rewrite_count", 0) + 1
 
@@ -86,17 +86,17 @@ def rewrite_query_node(state: ResearchState, *, query_rewriter) -> dict:
 
 
 
-def query_analysis_node(state: ResearchState, *, query_router) -> dict:
+async def query_analysis_node(state: ResearchState, *, query_router) -> dict:
 
-    route = query_router.route(state["query"])
+    route = await query_router.route(state["query"])
 
     return {"route": route}
 
 
 
 
-def web_search_node(state, *, web_search, web_evidence_grader):
-    results = web_search.search_and_fetch(state["query"])
+async def web_search_node(state, *, web_search, web_evidence_grader):
+    results = await web_search.search_and_fetch(state["query"])
 
     filtered_results = []
 
@@ -106,7 +106,7 @@ def web_search_node(state, *, web_search, web_evidence_grader):
         if not content.strip():
             continue
 
-        relevant = web_evidence_grader.grade(
+        relevant = await web_evidence_grader.grade(
             query=state["query"],
             title=result.get("title", ""),
             url=result.get("url", ""),
@@ -147,7 +147,7 @@ def build_evidence(state: ResearchState) -> str:
 
 
 
-def generate_answer_node(state: ResearchState, *, answer_generator) -> dict:
+async def generate_answer_node(state: ResearchState, *, answer_generator) -> dict:
 
     query= state["query"]
 
@@ -184,7 +184,7 @@ def generate_answer_node(state: ResearchState, *, answer_generator) -> dict:
 
     evidence = build_evidence(state)
 
-    answer = answer_generator.generate(query=query, evidence=evidence)
+    answer = await answer_generator.generate(query=query, evidence=evidence)
 
     generation_attempts = (state.get("generation_attempts", 0) + 1)
 
@@ -193,10 +193,10 @@ def generate_answer_node(state: ResearchState, *, answer_generator) -> dict:
 
 
 
-def faithfulness_check_node(state: ResearchState, *, faithfulness_grader) -> dict:
+async def faithfulness_check_node(state: ResearchState, *, faithfulness_grader) -> dict:
     evidence = build_evidence(state)
 
-    faithful = faithfulness_grader.grade(query=state["query"],
+    faithful = await faithfulness_grader.grade(query=state["query"],
                                          answer=state["answer"],
                                          evidence=evidence)
 
@@ -205,8 +205,8 @@ def faithfulness_check_node(state: ResearchState, *, faithfulness_grader) -> dic
 
 
 
-def usefulness_check_node(state: ResearchState, *, usefulness_grader) -> dict:
-    useful = usefulness_grader.grade(query= state["query"],
+async def usefulness_check_node(state: ResearchState, *, usefulness_grader) -> dict:
+    useful = await usefulness_grader.grade(query= state["query"],
                                     answer=state["answer"])
 
     return {"useful": useful}

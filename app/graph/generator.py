@@ -8,7 +8,7 @@ class AnswerGenerator:
     def __init__(self):
         self.llm = ChatGoogleGenerativeAI(model=GENERATOR_MODEL)
 
-    def generate(self, query: str, evidence: str,) -> str:
+    async def generate(self, query: str, evidence: str,) -> str:
         current_date = datetime.now(timezone.utc).date().isoformat()
 
         prompt = f"""
@@ -60,6 +60,6 @@ Evidence:
 {evidence}
 """
 
-        response = self.llm.invoke(prompt)
+        response = await self.llm.ainvoke(prompt)
 
         return response.text.strip()

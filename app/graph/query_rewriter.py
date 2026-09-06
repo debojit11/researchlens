@@ -9,7 +9,7 @@ class QueryRewriter:
 
 
 
-    def rewrite(self, query: str) -> str:
+    async def rewrite(self, query: str) -> str:
         prompt=f"""
 You are rewriting a user's technical question to improve
 retrieval from technical documentation.
@@ -26,5 +26,5 @@ Do not answer the question.
 Return only the rewritten question.
 """
 
-        response =self.llm.invoke(prompt)
+        response = await self.llm.ainvoke(prompt)
         return response.text.strip()

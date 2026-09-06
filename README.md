@@ -1,179 +1,69 @@
 # ResearchLens
 
-ResearchLens is an adaptive technical research assistant built with **LangGraph**, **hybrid RAG**, **reranking**, **corrective retrieval**, **web fallback**, and **LangSmith**.
+ResearchLens is an adaptive technical research assistant built with **LangGraph**, **hybrid RAG**, **corrective retrieval**, **web fallback**, and **LangSmith**.
 
-The system answers technical questions from indexed documentation when possible, falls back to web search when the question is fresh or outside the indexed corpus, retries weak retrieval, and produces grounded answers with citations.
+It answers technical questions from indexed documentation when possible, routes freshness-sensitive questions to live web search, retries weak retrieval, and returns grounded answers with citations.
 
-## Current Architecture
+## Live Application
 
-```text
-                         QUESTION
-                            |
-                            v
-                      Query Analysis
-                            |
-                  +---------+---------+
-                  |                   |
-             Documentation        Web Search
-                  |                   |
-          +-------+-------+           v
-          |               |      Search + Fetch
-          v               v           |
-     Vector Search     BM25 Search     v
-          |               |      Web Evidence Grader
-          +-------+-------+          / \
-                  v                 /   \
-             Merge Results      evidence  none
-                  v                |       |
-               Rerank              |       v
-                  v                |  Insufficient Evidence
-          Relevance Grader         |
-             /        \            |
-          Good        Poor          |
-           |            |           |
-           |       Rewrite Query    |
-           |            |           |
-           |       Retrieve Again   |
-           |            |           |
-           |   still poor -> Web Search
-           |                        |
-           +------------------------+
-                            |
-                            v
-                         Generate
-                            |
-                            v
-                    Faithfulness Check
-                       /          \
-                    Pass          Fail
-                     |             |
-                     v             +--> bounded retry
-                Usefulness Check
-                   /       \
-                Pass       Fail
-                 |          |
-                 v          +--> bounded retry
-                END
-```
+**ResearchLens:** https://gen-lang-client-0560064293.web.app
 
-## Project Scope
+Backend API: `https://researchlens-150737449748.asia-south1.run.app`
 
-### Included in v1
+## What It Does
 
-- Technical documentation ingestion
-- Structure-aware chunking and metadata preservation
-- Persistent Chroma vector store
-- Gemini Embedding 2 retrieval embeddings
-- Dense/vector retrieval
-- BM25 keyword retrieval
-- Reciprocal-rank hybrid merging
-- Local cross-encoder reranking
-- LLM-based relevance grading
-- Query rewriting when retrieval quality is poor
-- LangGraph state, nodes, conditional routing, and bounded retry loops
-- Freshness-aware web search fallback
-- Web evidence filtering before generation
-- Grounded answer generation with structured citations
-- Faithfulness checking
-- Answer usefulness checking
-- LangSmith tracing and evaluation
-- Streamlit frontend
-- Free deployment
+- Routes each question to documentation retrieval or live web search
+- Combines vector retrieval with BM25
+- Reranks retrieved evidence before generation
+- Grades evidence quality and rewrites weak queries
+- Falls back to web search when documentation retrieval remains insufficient
+- Filters web evidence before generation
+- Produces cited answers grounded in retrieved evidence
+- Runs faithfulness and usefulness checks
+- Exposes LangSmith traces and evaluation results
+- Supports cancellable requests from the deployed UI
 
-### Explicitly out of scope
+## Architecture
 
-- Multimodal RAG
-- GraphRAG
-- CAG
-- Multi-agent systems
-- Authentication and billing
-- Large-scale production infrastructure
-- Fine-tuning
-- Multiple technical ecosystems in v1
+ResearchLens is an **adaptive RAG system with corrective retrieval behavior**.
 
-## Current Progress
+At a high level:
+
+- LangGraph controls routing, retrieval, retries, generation, and quality checks
+- documentation questions use Chroma + BM25 hybrid retrieval
+- a local BGE reranker improves candidate ordering
+- weak retrieval is corrected through query rewriting and bounded retries
+- fresh or external questions use TinyFish Search + Fetch
+- Gemini models handle routing, grading, rewriting, and answer generation
+- FastAPI serves the backend on Google Cloud Run
+- React + Vite serves the frontend on Firebase Hosting
+
+For the full architecture, design decisions, experiments, and evaluation notes, see [`docs/PROJECT_DESIGN.md`](docs/PROJECT_DESIGN.md).
+
+## Development Approach
 
 ### Phase 1 — Retrieval Foundation
-![Phase 1](https://img.shields.io/badge/Phase%201-Complete-brightgreen)
-
-- Persistent Chroma vector store
-- Gemini embeddings
-- Dense/vector retrieval
-- BM25 retrieval
-- Hybrid result merging and deduplication
-- Local cross-encoder reranking
-- Current reranker: `BAAI/bge-reranker-base`
-
-The reranker choice was validated experimentally. Larger and alternative rerankers were tested, but `bge-reranker-base` provided the best balance of quality, model size, and latency for v1.
+Built persistent Chroma retrieval, BM25 keyword search, hybrid merging, and local reranking.
 
 ### Phase 2 — Retrieval Correction
-![Phase 2](https://img.shields.io/badge/Phase%202-Complete-brightgreen)
-
-- Relevance grader
-- Minimum evidence threshold
-- Query rewriter
-- Good-evidence branch
-- Poor-evidence branch
-- Bounded rewrite/retrieval retry loop
-- Web fallback after repeated weak retrieval
+Added relevance grading, query rewriting, minimum-evidence thresholds, and bounded corrective retrieval.
 
 ### Phase 3 — LangGraph Orchestration
-![Phase 3](https://img.shields.io/badge/Phase%203-Complete-brightgreen)
-
-- Shared `ResearchState`
-- Retrieval, reranking, grading, rewriting, routing, generation, and quality-check nodes
-- Conditional graph routing
-- Documentation vs web query analysis
-- Bounded generation retries
-- Explicit terminal path when sufficient evidence cannot be found
+Moved the system into a stateful graph with conditional routing, retries, and explicit terminal paths.
 
 ### Phase 4 — Web Search and Fallback
-![Phase 4](https://img.shields.io/badge/Phase%204-Complete-brightgreen)
+Added TinyFish Search + Fetch, freshness-aware routing, web fallback, and web-evidence grading.
 
-- TinyFish Search + Fetch integration
-- Direct web route for fresh or external questions
-- Web fallback after weak documentation retrieval
-- Freshness-aware search using `recency_minutes`
-- Live fetches for freshness-sensitive queries using `ttl=0`
-- LLM-based web evidence grading
-- Empty-evidence terminal instead of generating from weak or mismatched web results
+### Phase 5 — Grounded Generation
+Added documentation/web answer generation with structured citations and explicit insufficient-evidence behavior.
 
-### Phase 5 — Answer Generation and Citations
-![Phase 5](https://img.shields.io/badge/Phase%205-Complete-brightgreen)
+### Phase 6 — Output Quality
+Added faithfulness and usefulness checks with bounded regeneration.
 
-- Grounded generation from documentation evidence
-- Grounded generation from fetched web evidence
-- Broad-scope evidence preference in the generator
-- Structured documentation citations with source, section, and section page range
-- Structured web citations with source titles and URLs
-- Explicit refusal to invent an answer when evidence is insufficient
+### Phase 7 — LangSmith Evaluation
+Added tracing and evaluation across routing, answer behavior, faithfulness, and usefulness.
 
-### Phase 6 — Output Quality Checks
-![Phase 6](https://img.shields.io/badge/Phase%206-Complete-brightgreen)
-
-- Faithfulness grader
-- Usefulness grader
-- Bounded regeneration after quality failure
-- Explicit terminal response if an acceptable grounded answer cannot be produced
-
-### Phase 7 — LangSmith and Evaluation
-![Phase 7](https://img.shields.io/badge/Phase%207-Complete-brightgreen)
-
-Completed:
-
-- LangSmith tracing
-- Evaluation dataset: `researchlens-v1-eval`
-- 12 representative documentation and web-search cases
-- Route-accuracy evaluator
-- Answer-behavior evaluator
-- Faithfulness evaluator
-- Usefulness evaluator
-- Multiple reranker comparison runs
-- Structured-ingestion v2 evaluation
-- Final clean 12/12 benchmark after web-retrieval refinements
-- Controlled corrective-retrieval branch validation with `pytest`
-
-Final evaluation result:
+Final evaluation:
 
 ```text
 route accuracy:        1.00
@@ -183,128 +73,56 @@ usefulness:            1.00 on generated answers
 successful runs:       12/12
 ```
 
-The corrective branch was also validated independently by temporarily patching the evidence threshold inside a standalone test. The graph executed two rewrite cycles and terminated normally, proving the bounded rewrite/retrieve path works without changing production configuration.
-
 ### Phase 8 — UI and Deployment
-![Phase 8](https://img.shields.io/badge/Phase%208-In%20Progress-yellow)
+Added FastAPI, a React + Vite frontend, request cancellation, friendly upstream error handling, Docker packaging, Cloud Run deployment, and Firebase Hosting.
 
-Current deployment preparation:
-
-- measured local process memory across startup and one full query
-- idle graph footprint: about 1.0 GB RSS
-- observed post-query RSS: about 1.48 GB
-- target deployment baseline: 2 GiB RAM with concurrency 1
-- Google Cloud Run selected as the leading deployment target
-- startup optimization planned before UI work so the PDF is not reparsed on every cold start
-
-Remaining:
-
-- persist/load structured chunks for faster startup
-- containerize the application
-- deploy the backend on Cloud Run
-- add the user-facing UI
-- final cleanup and examples
-
-## Structured Ingestion v2
-
-The original ingestion path used `PyPDFLoader` followed by fixed-size recursive character splitting. Retrieval testing exposed several issues:
-
-- some chunks ended mid-sentence,
-- section context could be lost,
-- table content could be fragmented,
-- printed page numbers and physical PDF page indexes were easy to confuse.
-
-The AWS SDKs and Tools Reference Guide contains a reliable embedded PDF table of contents, so the ingestion pipeline was redesigned around the document's own structure instead of blindly increasing chunk size.
-
-Current ingestion flow:
-
-```text
-PDF
- |
- v
-PyMuPDF embedded TOC
- |
- +--> canonical section hierarchy
- |
- v
-PyMuPDF4LLM Markdown extraction
- |
- v
-TOC-bounded atomic sections
- |
- v
-semantic block splitting
- |
- +--> prose / lists -> paragraph and sentence-aware packing
- |
- +--> tables -> complete-row splitting with repeated headers
- |
- v
-LangChain Documents
-```
-
-Each chunk now preserves metadata such as:
-
-- source
-- section
-- TOC title
-- TOC level
-- full TOC path
-- section page start/end
-- content type
-- chunk index
-
-The first structured prototype accidentally duplicated parent and child TOC content and produced 2,612 chunks. Switching to atomic ownership between one TOC heading and the immediately following TOC heading reduced the corpus to **746 structured chunks** while retaining hierarchy through `toc_path`.
-
-PyMuPDF4LLM and Docling were compared for table-heavy pages. Docling reconstructed table structure more aggressively but remained much slower and still did not reliably repair narrow-cell word fragmentation. PyMuPDF + PyMuPDF4LLM was therefore kept for v1.
-
-## Gemini Embedding 2 Retrieval Formatting
-
-The vector layer now uses a small embedding wrapper so document and query text can be formatted differently for question-answering retrieval without modifying the stored `Document.page_content`.
-
-Conceptually:
-
-```text
-Document embedding input:
-title: <section heading> | text: <chunk content>
-
-Query embedding input:
-task: question answering | query: <user query>
-```
-
-This keeps BM25, reranking, relevance grading, answer generation, and citations working from the original clean chunk text while giving the dense retriever asymmetric query/document instructions.
+**Status: Complete**
 
 ## Tech Stack
 
-- Python 3.12+
-- uv
+### AI / Retrieval
 - LangChain
 - LangGraph
-- ChromaDB
-- rank-bm25
-- PyMuPDF
-- PyMuPDF4LLM
-- FlagEmbedding
 - Gemini API
+- Gemini Embedding 2
+- ChromaDB
+- BM25
+- FlagEmbedding / `BAAI/bge-reranker-base`
 - TinyFish
 - LangSmith
-- Streamlit
 
-## Current Development Corpus
+### Backend
+- Python 3.12+
+- FastAPI
+- uv
+- Docker
 
-The current development corpus is the **AWS SDKs and Tools Reference Guide**.
+### Frontend
+- React
+- TypeScript
+- Vite
+- Firebase Hosting
 
-It is used as the single v1 documentation corpus so retrieval, correction, evaluation, and deployment can be completed without adding unnecessary ecosystem breadth.
+### Deployment
+- Google Cloud Run
+- Firebase Hosting
+- Google Secret Manager
 
-## Setup
+## Current Corpus
 
-Create and activate the environment:
+The v1 corpus is the **AWS SDKs and Tools Reference Guide**.
+
+The project intentionally uses one technical documentation corpus so the focus stays on retrieval quality, correction, evaluation, and production deployment rather than ecosystem breadth.
+
+## Local Setup
+
+Install dependencies:
 
 ```bash
 uv sync
 ```
 
-Create a `.env` file:
+Create a root `.env` file:
 
 ```env
 GOOGLE_API_KEY=
@@ -316,10 +134,24 @@ LANGSMITH_API_KEY=
 LANGSMITH_PROJECT=researchlens
 ```
 
-Run the current pipeline:
+Run the backend:
 
 ```bash
-uv run python main.py
+uv run uvicorn app.api:app --reload --port 8001
+```
+
+Run the frontend:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+For local frontend development:
+
+```env
+VITE_API_BASE_URL=http://localhost:8001
 ```
 
 Run the evaluation suite:
@@ -328,84 +160,60 @@ Run the evaluation suite:
 uv run python -m evals.run_experiment
 ```
 
+## Production Deployment
+
+Frontend:
+
+```text
+https://gen-lang-client-0560064293.web.app
+```
+
+Backend:
+
+```text
+https://researchlens-150737449748.asia-south1.run.app
+```
+
+Current Cloud Run configuration:
+
+```text
+region:         asia-south1
+memory:         4 GiB
+CPU:            1 vCPU
+concurrency:    2
+min instances:  1
+max instances:  2
+timeout:        300 seconds
+```
+
 ## Repository Structure
 
 ```text
 researchlens/
-|
-|-- .chroma/
-|
-|-- app/
-|   |-- config.py
-|   |-- state.py
-|   |
-|   |-- ingestion/
-|   |   |-- __init__.py
-|   |   |-- loader.py
-|   |   `-- loader_v2.py
-|   |
-|   |-- retrieval/
-|   |   |-- __init__.py
-|   |   |-- vector.py
-|   |   |-- bm25.py
-|   |   |-- hybrid.py
-|   |   `-- reranker.py
-|   |
-|   |-- web/
-|   |   |-- __init__.py
-|   |   `-- search.py
-|   |
-|   `-- graph/
-|       |-- __init__.py
-|       |-- graders.py
-|       |-- generator.py
-|       |-- nodes.py
-|       |-- query_rewriter.py
-|       |-- query_router.py
-|       |-- routes.py
-|       `-- workflow.py
-|
-|-- data/
-|-- docs/
-|   `-- PROJECT_DESIGN.md
-|
-|-- evals/
-|   |-- __init__.py
-|   |-- create_dataset.py
-|   |-- add_examples.py
-|   |-- evaluators.py
-|   `-- run_experiment.py
-|
-|-- scripts/
-|   |-- inspect_pdf.py
-|   |-- chunking_prototype.py
-|   |-- chunking_prototype_v2.py
-|   |-- test_loader_v2.py
-|   |-- test_embeddings_v2.py
-|   `-- measure_memory.py
-|
-|-- tests/
-|   |-- conftest.py
-|   `-- test_corrective_retrieval.py
-|
-|-- .env
-|-- .gitignore
-|-- main.py
-|-- pyproject.toml
-`-- README.md
+├── app/
+│   ├── api.py
+│   ├── runtime.py
+│   ├── config.py
+│   ├── state.py
+│   ├── graph/
+│   ├── ingestion/
+│   ├── retrieval/
+│   └── web/
+├── data/
+├── docs/
+│   └── PROJECT_DESIGN.md
+├── evals/
+├── frontend/
+├── scripts/
+├── tests/
+├── Dockerfile
+├── pyproject.toml
+├── uv.lock
+└── README.md
 ```
 
-## Roadmap
+## Project Status
 
-The adaptive-RAG, corrective-retrieval, web-evidence, answer-quality, and evaluation layers are now frozen for v1.
+ResearchLens v1 is complete.
 
-The remaining work is deployment-focused:
-
-- persist the 746 structured chunks so production startup does not reparse the source PDF,
-- package the application for container deployment,
-- deploy the backend to Google Cloud Run,
-- start with 2 GiB RAM, concurrency 1, and one warm minimum instance while trial credits are available,
-- build the user-facing interface,
-- finalize examples and documentation.
-
-The project remains intentionally bounded: new RAG techniques or additional documentation ecosystems are not required for v1.
+The deployed system satisfies the original v1 goal: a user can ask a technical question, be routed to documentation or web search, receive retrieved and reranked evidence, trigger corrective retrieval when needed, get a grounded answer with citations, and use the full system through the deployed application.

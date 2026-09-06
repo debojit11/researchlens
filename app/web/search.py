@@ -1,6 +1,7 @@
+import asyncio
 import os
-import requests
-import time
+
+import httpx
 
 
 SEARCH_URL = "https://api.search.tinyfish.ai"
@@ -23,7 +24,6 @@ def needs_fresh_search(query: str) -> bool:
     return any(term in query_lower for term in FRESHNESS_TERMS)
 
 
-
 class TinyFishSearch:
     def __init__(self):
         api_key = os.getenv("TINYFISH_API_KEY")
@@ -31,11 +31,10 @@ class TinyFishSearch:
         if not api_key:
             raise ValueError("TINYFISH_API_KEY is not set")
 
-        self.headers ={"X-API-Key": api_key}
+        self.headers = {"X-API-Key": api_key}
 
 
-
-    def search(self, query: str, max_results: int = 5,) -> list[dict]:
+    async def search(self, query: str, max_results: int = 5,) -> list[dict]:
 
         if self.is_version_query(query):
             purpose = (
@@ -62,12 +61,12 @@ class TinyFishSearch:
                 "Do not substitute related third-party SDKs or adjacent technologies."
             )
 
-        params = {"query": query, "purpose": purpose,}
+        params = {"query": query, "purpose": purpose}
 
         if needs_fresh_search(query) and not self.is_version_query(query):
             params["recency_minutes"] = 10080
 
-        response = self._request_with_retry(
+        response = await self._request_with_retry(
             "GET",
             SEARCH_URL,
             headers=self.headers,
@@ -79,15 +78,14 @@ class TinyFishSearch:
         return data.get("results", [])[:max_results]
 
 
+    async def fetch(self, urls: list[str], live: bool = False,) -> list[dict]:
 
-    def fetch(self, urls: list[str], live: bool = False,) -> list[dict]:
-
-        payload = {"urls": urls,"format": "markdown",}
+        payload = {"urls": urls, "format": "markdown"}
 
         if live:
             payload["ttl"] = 0
 
-        response = self._request_with_retry(
+        response = await self._request_with_retry(
             "POST",
             FETCH_URL,
             headers={
@@ -99,9 +97,7 @@ class TinyFishSearch:
         )
 
         data = response.json()
-
         return data.get("results", [])
-
 
 
     def is_version_query(self, query: str) -> bool:
@@ -118,7 +114,7 @@ class TinyFishSearch:
         )
 
 
-    def search_and_fetch(self, query: str, max_results: int = 6,) -> list[dict]:
+    async def search_and_fetch(self, query: str, max_results: int = 6,) -> list[dict]:
 
         queries = [query]
 
@@ -130,7 +126,7 @@ class TinyFishSearch:
         search_results = []
 
         for search_query in queries:
-            results = self.search(
+            results = await self.search(
                 query=search_query,
                 max_results=3,
             )
@@ -153,23 +149,32 @@ class TinyFishSearch:
 
         fresh = needs_fresh_search(query)
 
-        return self.fetch(urls, live=fresh,)
+        return await self.fetch(urls, live=fresh)
 
 
-
-
-    def _request_with_retry( self, method: str, url: str, *, max_attempts: int = 3, **kwargs,):
+    async def _request_with_retry(
+        self,
+        method: str,
+        url: str,
+        *,
+        max_attempts: int = 3,
+        **kwargs,
+    ):
         for attempt in range(1, max_attempts + 1):
             try:
-                response = requests.request(method, url, **kwargs,)
+                async with httpx.AsyncClient() as client:
+                    response = await client.request(method, url, **kwargs)
 
                 response.raise_for_status()
                 return response
 
-            except requests.RequestException:
+            except asyncio.CancelledError:
+                # Never retry a request that the user explicitly stopped.
+                raise
+
+            except httpx.HTTPError:
                 if attempt == max_attempts:
                     raise
 
                 wait_seconds = 2 ** (attempt - 1)
-
-                time.sleep(wait_seconds)
+                await asyncio.sleep(wait_seconds)

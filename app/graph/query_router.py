@@ -19,7 +19,7 @@ class QueryRouter:
         self.router = llm.with_structured_output(QueryRoute)
 
 
-    def route(self, query: str) -> str:
+    async def route(self, query: str) -> str:
         prompt = f"""
 You are routing technical research questions.
 
@@ -41,6 +41,6 @@ Do not answer the question.
 Question:
 {query}
 """
-        result = self.router.invoke(prompt)
+        result = await self.router.ainvoke(prompt)
 
         return result.route

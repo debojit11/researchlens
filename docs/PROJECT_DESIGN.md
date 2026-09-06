@@ -212,25 +212,38 @@ Gemini 3.x calls intentionally do not set temperature.
 
 ## 8. Persistence
 
-Chroma is persisted under:
+Chroma remains persisted under:
 
 ```text
 .chroma/
 ```
 
-Current behavior:
+The structured chunk corpus is also persisted as:
 
 ```text
-First run after an ingestion or embedding change:
-PDF -> structured chunks -> embeddings -> persistent Chroma
-
-Later runs:
-persistent Chroma -> query embedding -> similarity search
+data/chunks.jsonl
 ```
 
-The PDF is still parsed on application startup because BM25 needs the current chunk set in memory.
+Production startup therefore no longer reparses the 242-page source PDF.
 
-The vector and BM25 corpora must always come from the same ingestion version. When ingestion or embedding formatting changes, `.chroma` must be rebuilt rather than loading the stale index.
+Current runtime startup:
+
+```text
+data/chunks.jsonl
+   |
+   +--> BM25 index
+
+.chroma/
+   |
+   +--> vector retrieval
+
+local BGE reranker
+   |
+   v
+build graph once
+```
+
+If ingestion logic or embedding formatting changes, both the persisted chunk artifact and `.chroma` must be regenerated together so BM25 and vector retrieval remain aligned to the same corpus version.
 
 ## 9. Web Search Strategy
 
@@ -381,7 +394,7 @@ faithfulness:          1.00
 usefulness:            1.00
 ```
 
-The same evaluation suite is being reused after ingestion changes so architecture decisions are compared against a stable set of cases.
+The same evaluation suite was reused after ingestion changes so architecture decisions were compared against a stable set of cases.
 
 ## 13. Why Ingestion v2 Was Added
 
@@ -525,7 +538,7 @@ Decision:
 PyMuPDF + PyMuPDF4LLM
 ```
 
-remain the production-candidate parser stack.
+remain the production parser stack.
 
 Perfect PDF table reconstruction is explicitly not a v1 goal.
 
@@ -638,7 +651,7 @@ Two explicit insufficient-evidence cases correctly skipped faithfulness/usefulne
 
 Temporary Gemini Embedding 2 `429 RESOURCE_EXHAUSTED` errors were observed during some earlier evaluation attempts. These were external query-embedding capacity/rate failures rather than graph or retrieval-logic failures. The clean rerun completed without changing the architecture.
 
-## 19. Current Implementation Status
+## 19. Final Implementation Status
 
 ### Phase 1 — Retrieval Foundation
 
@@ -749,31 +762,56 @@ and completed successfully, proving the bounded rewrite/retrieve loop executes a
 
 ### Phase 8 — UI and Deployment
 
-Status: IN PROGRESS
+Status: COMPLETE
 
-Current preparation:
+Implemented:
 
-- local memory profiling added
-- measured approximately 1.0 GB RSS after full graph construction
-- measured approximately 1.48 GB RSS after one complete documentation query
-- Cloud Run selected as the leading deployment target
-- initial target sizing: 2 GiB RAM, concurrency 1
-- startup optimization planned before user-facing UI work
+- persisted structured chunks to `data/chunks.jsonl`
+- reusable runtime initialization in `app/runtime.py`
+- FastAPI production API with `/health` and `/research`
+- async/cancellable Gemini and TinyFish execution
+- request cancellation through browser disconnect for Stop/refresh behavior
+- friendly model/provider error mapping for 429, 502/503, and timeout cases
+- React + TypeScript + Vite frontend
+- Markdown-safe answer rendering
+- structured documentation and web citation display
+- single `Ask` / `Stop` action control
+- Dockerized backend using CPU-only PyTorch
+- Google Cloud Run deployment
+- Firebase Hosting deployment
+- production CORS configuration
+- production validation of documentation queries, web/freshness queries, Stop, and refresh reset behavior
 
-Remaining:
+Live frontend:
 
-- persist structured chunks for production startup
-- containerize the application
-- deploy backend to Cloud Run
-- build the user-facing interface
-- final cleanup
-- final examples
+```text
+https://gen-lang-client-0560064293.web.app
+```
 
-## 20. Deployment Performance Planning
+Production backend:
 
-Local startup profiling was performed before beginning UI/deployment work because the development entry point still reparses the source PDF and reconstructs in-memory resources on every process start.
+```text
+https://researchlens-150737449748.asia-south1.run.app
+```
 
-Measured Windows RSS:
+Current Cloud Run configuration:
+
+```text
+memory:        4 GiB
+CPU:           1 vCPU
+concurrency:   2
+min instances: 1
+max instances: 2
+timeout:       300 seconds
+```
+
+The deployed frontend uses Firebase Hosting and calls the Cloud Run backend directly over HTTPS.
+
+## 20. Deployment Performance and Final Configuration
+
+Local profiling was used to choose the deployment envelope and identify startup work that should be moved out of the request path.
+
+Initial Windows RSS measurements before startup optimization:
 
 ```text
 Python startup:             ~574 MB
@@ -785,46 +823,89 @@ after full graph build:     ~1.00 GB
 after one full query:       ~1.48 GB
 ```
 
-The measurements show that:
-
-- Chroma and BM25 add relatively little memory compared with the Python/model stack,
-- loading `BAAI/bge-reranker-base` is a major startup cost,
-- a full query introduces additional temporary memory pressure,
-- 2 GiB is a reasonable initial Cloud Run target but should be used with concurrency 1 and monitored,
-- 4 GiB remains the fallback if Linux/container measurements approach the 2 GiB limit.
-
-The next startup optimization is to move structured PDF parsing out of the runtime path:
+After persisted chunks were introduced:
 
 ```text
-offline/build step
-PDF
--> loader_v2
--> 746 structured chunks
--> persisted chunk artifact
--> persistent Chroma
-
-runtime startup
-persisted chunks
--> BM25
-persistent Chroma
--> vector retrieval
-load reranker
--> build graph once
+Python startup:             ~573 MB
+after persisted chunks:     ~575 MB
+after Chroma:               ~586 MB
+after BM25:                 ~590 MB
+after BGE reranker:         ~925 MB
+after full graph build:     ~933 MB
+after one full query:       ~1.41 GB
 ```
 
-This removes repeated parsing of the 242-page source document from cold starts.
+The production backend was containerized with CPU-only PyTorch, removing unnecessary CUDA/NVIDIA/Triton packages from the image.
 
-Google Cloud Run is currently the preferred deployment target. The initial deployment plan is:
+Final production deployment:
 
 ```text
-memory:       2 GiB
-concurrency:  1
-min instance: 1
+platform:       Google Cloud Run
+region:         asia-south1
+memory:         4 GiB
+CPU:            1 vCPU
+concurrency:    2
+min instances:  1
+max instances:  2
+timeout:        300 seconds
 ```
 
-Actual Cloud Run memory metrics will be used to validate or increase that allocation.
+Observed end-to-end latency remains dominated by retrieval/model/API work rather than Cloud Run overhead.
 
-## 21. v1 Boundary
+Public frontend:
+
+```text
+https://gen-lang-client-0560064293.web.app
+```
+
+Backend:
+
+```text
+https://researchlens-150737449748.asia-south1.run.app
+```
+
+CORS permits both local development (`http://localhost:5173`) and the deployed Firebase origin.
+
+## 21. Production Deployment Architecture
+
+```text
+Browser
+  |
+  v
+Firebase Hosting
+React + Vite frontend
+  |
+  | HTTPS
+  v
+Google Cloud Run
+FastAPI
+  |
+  v
+LangGraph workflow
+  |
+  +--> Chroma + Gemini Embedding 2
+  +--> BM25
+  +--> local BGE reranker
+  +--> Gemini models
+  `--> TinyFish Search + Fetch
+```
+
+The frontend and backend are deployed independently. Firebase Hosting serves only static frontend assets; all research execution remains in the Cloud Run backend.
+
+The frontend uses the Cloud Run URL as `VITE_API_BASE_URL`, while Cloud Run CORS explicitly allows the deployed Firebase origin.
+
+The final request model intentionally remains simple:
+
+- one active `/research` request per user action,
+- Stop aborts the browser request,
+- the backend detects the disconnect and cancels the LangGraph task,
+- refreshing the page also resets/cancels the active request,
+- no persistent user/session state is required,
+- the design remains compatible with `max instances = 2`.
+
+Friendly upstream error handling maps provider failures into user-facing API responses, including quota exhaustion with provider-supplied retry timing when available.
+
+## 22. v1 Boundary
 
 
 The following remain intentionally excluded:
@@ -844,7 +925,7 @@ The following remain intentionally excluded:
 
 Adding another technical documentation ecosystem later should be treated as a data/configuration extension, not a new architectural milestone.
 
-## 22. Definition of Done
+## 23. Definition of Done
 
 ResearchLens v1 is finished when a deployed user can:
 
@@ -861,4 +942,13 @@ ResearchLens v1 is finished when a deployed user can:
 11. Inspect traces/evaluations through LangSmith.
 12. Use the system through the deployed user-facing application.
 
-After this point, the project should be considered complete rather than continuously expanded.
+All twelve conditions are now satisfied.
+
+Live application:
+
+```text
+https://gen-lang-client-0560064293.web.app
+```
+
+After this point, the project is considered complete rather than continuously expanded.
+
